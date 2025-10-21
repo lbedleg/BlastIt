@@ -33,7 +33,7 @@ You can run **BlastIt** locally using either a development server or a simple st
 ```bash
 # Option A: Run with a Development Server (Recommended)
 
-# 0) Check requirements.txt
+# 0) Check docs/requirements.txt 
 
 # 1) Install dependencies
 npm install
