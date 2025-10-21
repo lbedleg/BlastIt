@@ -33,15 +33,18 @@ You can run **BlastIt** locally using either a development server or a simple st
 ```bash
 # Option A: Run with a Development Server (Recommended)
 
-# 0) Check docs/requirements.txt 
+# 1) Navigate into the project directory
+cd ./BlastIt-main
 
-# 1) Install dependencies
+# 2) Check docs/requirements.txt 
+
+# 3) Install dependencies
 npm install
 
-# 2) Start the development server (Vite or similar)
+# 4) Start the development server (Vite or similar)
 npm run dev
 
-# 3) Open in your browser
+# 5) Open in your browser
 http://localhost:5173
 
 
