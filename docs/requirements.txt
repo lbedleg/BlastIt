@@ -11,8 +11,4 @@ nvm install --lts        # or: nvm install 20
 nvm use --lts
 node -v                  # confirm it's 18+ (ideally 20.x)
 
-# 3) Clean dependencies
-rm -rf node_modules
-rm -f package-lock.json
-
 # Next steps -> README
