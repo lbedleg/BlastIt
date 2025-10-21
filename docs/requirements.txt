@@ -1,4 +1,4 @@
-# Game Setup Requirements & Quick Start
+# Game Setup Requirements & Quick Start (Option A)
 
 # 1) Check Node.js version
 node -v
