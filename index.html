@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>BlastIt!</title>
+
+    <!-- Avoid favicon 404s -->
+    <link rel="icon" href="data:," />
+
+    <!-- Use absolute paths with Vite -->
+    <link rel="stylesheet" href="/src/styles.css" />
+
+    <!-- Import maps for Three.js (using CDN modules) -->
+    <script type="importmap">
+    {
+      "imports": {
+        "three": "https://unpkg.com/three@0.161.0/build/three.module.js",
+        "three/addons/": "https://unpkg.com/three@0.161.0/examples/jsm/"
+      }
+    }
+    </script>
+  </head>
+  <body>
+    <canvas id="game"></canvas>
+
+    <!-- HUD -->
+    <div id="hud" class="hud hidden">
+      <div class="pill" id="score">Score: 0</div>
+      <div class="pill" id="attempts">Attempts: 0/3</div>
+      <div id="controls" class="controls">
+        <span><kbd>WASD</kbd>/<kbd>Arrows</kbd> aim</span>
+        <span class="dot">•</span>
+        <span><kbd>Space</kbd> shoot</span>
+        <span class="dot">•</span>
+        <span><kbd>R</kbd> reset</span>
+      </div>
+    </div>
+
+    <!-- Main Menu (VISIBLE ON LOAD) -->
+    <div id="menu" class="overlay">
+      <div class="panel">
+        <div class="title">Blast<span class="accent">It!</span></div>
+        <div class="subtitle">Thread the needle. Beat the keeper.</div>
+        <div class="row">
+          <button id="playBtn" class="btn primary">Play</button>
+          <button id="settingsBtn" class="btn">Settings</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Game Over (HIDDEN ON LOAD) -->
+    <div id="gameOver" class="overlay hidden">
+      <div class="panel">
+        <div class="title">Game Over</div>
+        <div id="finalScore" class="subtitle">Final Score: 0</div>
+        <div class="row">
+          <button id="playAgainBtn" class="btn primary">Play Again</button>
+          <button id="quitBtn" class="btn">Quit</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Settings Overlay (HIDDEN ON LOAD) -->
+    <div id="settingsPanel" class="overlay hidden">
+      <div class="panel">
+        <div class="title">Settings</div>
+        <div class="row space">
+          <div class="group">
+            <div class="label">Mode</div>
+            <div class="toggle">
+              <button id="dayBtn"  class="btn" aria-pressed="true">🌞 Day</button>
+              <button id="nightBtn" class="btn">🌙 Night</button>
+            </div>
+          </div>
+          <div class="group">
+            <div class="label">Volume</div>
+            <input id="volumeSlider" type="range" min="0" max="100" value="60" step="1" />
+          </div>
+        </div>
+        <div class="row">
+          <button id="closeSettingsBtn" class="btn">Close</button>
+        </div>
+      </div>
+    </div>
+    
+    <!-- Miss-3-in-a-row Animation -->
+    <div id="miss3" class="miss3 hidden"><div class="burst">x3 MISS</div></div>
+
+    <!-- Main module -->
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
