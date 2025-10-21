@@ -1,0 +1,22 @@
+# Game Setup Requirements & Quick Start
+
+# 1) Check Node.js version
+node -v
+# If the version is >= 18, you're good to go.
+# If the version is < 18, install and use the latest LTS with nvm:
+
+# 2) Install/Use Node LTS (only if Node < 18)
+# (If you don't have nvm yet, install from https://github.com/nvm-sh/nvm)
+nvm install --lts        # or: nvm install 20
+nvm use --lts
+node -v                  # confirm it's 18+ (ideally 20.x)
+
+# 3) Clean and reinstall dependencies
+rm -rf node_modules
+rm -f package-lock.json
+npm install
+
+# 4) Run the development server
+npm run dev
+
+# Open your browser at http://localhost:5173
