@@ -1,4 +1,4 @@
-# Game Setup Requirements & Quick Start (Option A)
+# Game Setup Requirements (Option A)
 
 # 1) Check Node.js version
 node -v
@@ -11,12 +11,8 @@ nvm install --lts        # or: nvm install 20
 nvm use --lts
 node -v                  # confirm it's 18+ (ideally 20.x)
 
-# 3) Clean and reinstall dependencies
+# 3) Clean dependencies
 rm -rf node_modules
 rm -f package-lock.json
-npm install
 
-# 4) Run the development server
-npm run dev
-
-# Open your browser at http://localhost:5173
+# Next steps -> README
