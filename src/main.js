@@ -1,10 +1,13 @@
+/* global io */
 import * as THREE from 'three';
 import { RGBELoader } from 'three/addons/loaders/RGBELoader.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { Scoring } from './systems/Scoring.js';
 import { Goalkeeper } from './entities/Goalkeeper.js';
 import { AudioSystem } from './systems/Audio.js';
-let audio = null; // <-- make audio assignable
+import { PlayerAvatar } from './entities/Player.js';
+
+let audio = null;
 
 /* =======================
    SCENE & RENDERER
@@ -23,11 +26,16 @@ scene.backgroundBlurriness = 0.0;
 scene.backgroundIntensity = 0.65;
 scene.environmentIntensity = 0.85;
 
-const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
+const camera = new THREE.PerspectiveCamera(
+  60,
+  window.innerWidth / window.innerHeight,
+  0.1,
+  1000
+);
 camera.position.set(0, 1.6, 4.5);
 camera.lookAt(0, 1.2, -8);
 
-let light = new THREE.DirectionalLight(0xffffff, 1.6); // <-- was const, now let
+let light = new THREE.DirectionalLight(0xffffff, 1.6);
 light.position.set(5, 10, 3);
 light.castShadow = true;
 scene.add(light);
@@ -36,7 +44,7 @@ scene.add(new THREE.AmbientLight(0xffffff, 0.3));
 /* =======================
    AUDIO
 ======================= */
-audio = new AudioSystem(camera); // <-- assign into the let audio
+audio = new AudioSystem(camera);
 
 /* =======================
    ASSET BASE
@@ -60,43 +68,36 @@ new RGBELoader().load(`${ASSET_BASE}hdris/stadium.hdr`, (hdr) => {
 /* =======================
    SETTINGS (UI + BEHAVIOR)
 ======================= */
-const settingsPanel   = document.getElementById('settingsPanel');
-const settingsBtn     = document.getElementById('settingsBtn');
-const closeSettingsBtn= document.getElementById('closeSettingsBtn');
-const dayBtn          = document.getElementById('dayBtn');
-const nightBtn        = document.getElementById('nightBtn');
-const volumeSlider    = document.getElementById('volumeSlider');
-const menuEl          = document.getElementById('menu');
+const settingsPanel    = document.getElementById('settingsPanel');
+const settingsBtn      = document.getElementById('settingsBtn');
+const closeSettingsBtn = document.getElementById('closeSettingsBtn');
+const dayBtn           = document.getElementById('dayBtn');
+const nightBtn         = document.getElementById('nightBtn');
+const volumeSlider     = document.getElementById('volumeSlider');
+const menuEl           = document.getElementById('menu');
 
 let currentMode = 'day';
 function applyMode(mode) {
   currentMode = mode;
-  const isNight = (mode === 'night');
+  const isNight = mode === 'night';
 
-  // Update pressed state on buttons (🌞 / 🌙)
   dayBtn?.setAttribute('aria-pressed', String(!isNight));
   nightBtn?.setAttribute('aria-pressed', String(isNight));
 
-  // --- DARK NIGHT / BRIGHT DAY PRESET ---
   if (light) {
-    // Key light
-    light.intensity = isNight ? 0.35 : 1.8;         // ↓ dark night, ↑ bright day
-    light.color.set(isNight ? 0x88aaff : 0xffffff); // cooler night tint
+    light.intensity = isNight ? 0.35 : 1.8;
+    light.color.set(isNight ? 0x88aaff : 0xffffff);
   }
 
-  // Ambient light (if present)
-  const amb = scene.children.find(o => o.isAmbientLight);
-  if (amb) amb.intensity = isNight ? 0.12 : 0.30;   // dim ambient at night
+  const amb = scene.children.find((o) => o.isAmbientLight);
+  if (amb) amb.intensity = isNight ? 0.12 : 0.3;
 
-  // HDRI / IBL strength
-  scene.backgroundIntensity   = isNight ? 0.18 : 0.70; // background brightness
-  scene.environmentIntensity  = isNight ? 0.42 : 0.90; // reflections/ambient
+  scene.backgroundIntensity = isNight ? 0.18 : 0.7;
+  scene.environmentIntensity = isNight ? 0.42 : 0.9;
 
-  // Global “camera exposure”
   renderer.toneMappingExposure = isNight ? 0.68 : 1.05;
 }
 
-// Open/close settings overlay
 settingsBtn?.addEventListener('click', () => {
   menuEl?.classList.add('hidden');
   settingsPanel?.classList.remove('hidden');
@@ -106,11 +107,9 @@ closeSettingsBtn?.addEventListener('click', () => {
   menuEl?.classList.remove('hidden');
 });
 
-// Mode toggles
-dayBtn?.addEventListener('click',  () => applyMode('day'));
+dayBtn?.addEventListener('click', () => applyMode('day'));
 nightBtn?.addEventListener('click', () => applyMode('night'));
 
-// Volume slider → master volume (0–100 → 0.0–1.0)
 volumeSlider?.addEventListener('input', (e) => {
   const v = Number(e.target.value) / 100;
   if (audio && typeof audio.setMasterVolume === 'function') {
@@ -125,7 +124,159 @@ const gltfLoader = new GLTFLoader();
 const texLoader  = new THREE.TextureLoader();
 
 /* =======================
-   PITCH
+   SOCKET / MULTIPLAYER
+======================= */
+
+const socket = io();
+let myId = null;
+
+let localPlayer = null;
+const remotePlayers = new Map(); // id -> PlayerAvatar
+let input = { left: false, right: false };
+
+// ask name + color
+const playerNameRaw = window.prompt('Enter your player name:', 'Player');
+const playerName = playerNameRaw && playerNameRaw.trim() ? playerNameRaw.trim() : 'Player';
+
+let colorRaw = window.prompt('Pick your color (blue/red):', 'blue');
+colorRaw = (colorRaw || 'blue').trim().toLowerCase();
+let playerColor = colorRaw === 'red' ? 'red' : 'blue';
+
+// HUD refs for 1v1 scoreboard & ready
+const meNameEl   = document.getElementById('meName');
+const meColorEl  = document.getElementById('meColor');
+const meWinsEl   = document.getElementById('meWins');
+const mePointsEl = document.getElementById('mePoints');
+
+const oppNameEl   = document.getElementById('oppName');
+const oppColorEl  = document.getElementById('oppColor');
+const oppWinsEl   = document.getElementById('oppWins');
+const oppPointsEl = document.getElementById('oppPoints');
+
+const readyBar     = document.getElementById('readyBar');
+const readyBtn     = document.getElementById('readyBtn');
+const readyStatus  = document.getElementById('readyStatus');
+let isReady = false;
+
+socket.on('connect', () => {
+  myId = socket.id;
+  socket.emit('join', { name: playerName, color: playerColor });
+});
+
+socket.on('sessionFull', () => {
+  alert('Session is full (1v1 only).');
+});
+
+// full player list on join
+socket.on('currentPlayers', (players) => {
+  setupPlayersFromState(players);
+});
+
+// new player joined
+socket.on('playerJoined', (p) => {
+  if (p.id === myId) return;
+  createRemotePlayer(p);
+  updateScoreboardForPlayers(playersFromMap());
+});
+
+// remote player movement
+socket.on('playerMoved', ({ id, x, z }) => {
+  const remote = remotePlayers.get(id);
+  if (remote) remote.setPosition(x, z);
+});
+
+// player left
+socket.on('playerLeft', ({ id }) => {
+  const remote = remotePlayers.get(id);
+  if (remote && remote.mesh) scene.remove(remote.mesh);
+  remotePlayers.delete(id);
+  updateScoreboardForPlayers(playersFromMap());
+});
+
+// scoreboard updates from server
+socket.on('scoreUpdate', ({ players }) => {
+  updateScoreboardForPlayers(players);
+});
+
+// match over (server decides winner)
+socket.on('matchOver', ({ winnerId, loserId, reason, players }) => {
+  const iWon = winnerId === myId;
+  updateScoreboardForPlayers(players);
+  showMatchOver(iWon, reason);
+});
+
+// ready counts 0/2, 1/2, 2/2
+socket.on('readyStatus', ({ readyCount, totalPlayers }) => {
+  if (readyStatus) {
+    readyStatus.textContent = `Ready: ${readyCount}/${totalPlayers}`;
+  }
+});
+
+// server tells both to start new match
+socket.on('newMatchStart', ({ players }) => {
+  isReady = false;
+  if (readyBtn) readyBtn.textContent = 'Ready';
+  if (readyBar) readyBar.classList.add('hidden');
+
+  gameOver.classList.add('hidden');
+  showHUD();
+  resetWholeScene();
+  scoring.reset();
+  gameState = GameState.PLAYING;
+  updateScoreboardForPlayers(players);
+});
+
+// session over (someone quit / disconnected)
+socket.on('sessionOver', () => {
+  gameState = GameState.MENU;
+  showMenu();
+  hideHUD();
+  if (readyBar) readyBar.classList.add('hidden');
+});
+
+readyBtn?.addEventListener('click', () => {
+  isReady = !isReady;
+  readyBtn.textContent = isReady ? 'Unready' : 'Ready';
+  socket.emit('playerReady', { ready: isReady });
+});
+
+function setupPlayersFromState(players) {
+  Object.values(players).forEach((p) => {
+    if (p.id === myId) {
+      createLocalPlayer(p);
+      playerColor = p.color; // authoritative color from server
+    } else {
+      createRemotePlayer(p);
+    }
+  });
+  updateScoreboardForPlayers(players);
+}
+
+function playersFromMap() {
+  const obj = {};
+  if (localPlayer && myId) {
+    obj[myId] = {
+      id: myId,
+      name: localPlayer.name,
+      color: playerColor,
+      points: scoring.score,
+      wins: 0,
+    };
+  }
+  remotePlayers.forEach((avatar, id) => {
+    obj[id] = {
+      id,
+      name: avatar.name,
+      color: avatar.teamColor,
+      points: 0,
+      wins: 0,
+    };
+  });
+  return obj;
+}
+
+/* =======================
+   PITCH & CONSTANTS
 ======================= */
 const grassTex = texLoader.load(`${ASSET_BASE}textures/grass.jpg`);
 grassTex.wrapS = grassTex.wrapT = THREE.RepeatWrapping;
@@ -140,27 +291,28 @@ ground.rotation.x = -Math.PI / 2;
 ground.receiveShadow = true;
 scene.add(ground);
 
-/* =======================
-   CONSTANTS / DIMENSIONS
-======================= */
 const groundY = 0;
 const keeperHalfHeight = 0.95;
 
-const GOAL_Z    = -7.5; // goal line (endline)
+const GOAL_Z    = -7.5;
 const ENDLINE_Z = GOAL_Z;
 const KEEPER_Z  = GOAL_Z + 0.15;
 
 const GOAL_HALF_WIDTH = 3.6;
 const GOAL_HEIGHT     = 2.5;
 
-// BOX_DEPTH ≡ 16.5 m; other dims derive from it
+// lateral margin inside posts for blockers
+const BLOCKER_MARGIN = 0.3;
+const BLOCKER_MIN_X = -GOAL_HALF_WIDTH + BLOCKER_MARGIN;
+const BLOCKER_MAX_X =  GOAL_HALF_WIDTH - BLOCKER_MARGIN;
+
 const BOX_DEPTH = 5.5;
 const BOX_WIDTH = BOX_DEPTH * (40.32 / 16.5);
 const SIX_DEPTH = BOX_DEPTH * ( 5.50 / 16.5);
 const SIX_WIDTH = BOX_DEPTH * (18.32 / 16.5);
 
 /* =======================
-   VIEWPORT HELPERS
+   VIEWPORT / MARKINGS
 ======================= */
 function viewportWidthAtZ(zWorld){
   const dist = Math.abs(camera.position.z - zWorld);
@@ -169,9 +321,6 @@ function viewportWidthAtZ(zWorld){
   return height * (renderer.domElement.width / renderer.domElement.height);
 }
 
-/* =======================
-   FIELD MARKINGS
-======================= */
 const LINE_W = 0.08;
 const LINE_Y = 0.012;
 
@@ -192,7 +341,10 @@ function addStripe(x1, z1, x2, z2, width = LINE_W) {
   return m;
 }
 function addDisk(x, z, r = 0.09) {
-  const m = new THREE.Mesh(new THREE.CircleGeometry(r, 48), new THREE.MeshBasicMaterial({ color: 0xffffff }));
+  const m = new THREE.Mesh(
+    new THREE.CircleGeometry(r, 48),
+    new THREE.MeshBasicMaterial({ color: 0xffffff })
+  );
   m.rotation.x = -Math.PI / 2;
   m.position.set(x, LINE_Y, z);
   m.renderOrder = 2;
@@ -209,7 +361,7 @@ function drawMarkings(){
   }
 
   const L = viewportWidthAtZ(ENDLINE_Z) * 1.2;
-  addStripe(-L/2, ENDLINE_Z, L/2, ENDLINE_Z); // goal line
+  addStripe(-L/2, ENDLINE_Z, L/2, ENDLINE_Z);
 
   // 18-yard box
   {
@@ -229,120 +381,10 @@ function drawMarkings(){
     addStripe(xL, zF, xR, zF);
   }
 
-  // Penalty spot
   const PEN_SPOT_Z = ENDLINE_Z + BOX_DEPTH * (11 / 16.5);
   addDisk(0, PEN_SPOT_Z, 0.09);
 }
 drawMarkings();
-
-/* =======================
-   FANS (crowd in the stands)
-======================= */
-function createFansWall({
-  z = -11.5,        // stands position (behind the goal line at ~ -7.5)
-  width = 22,       // span along X
-  height = 4.2,     // total crowd height
-  rows = 6,
-  cols = 120,
-  yBase = 1.2,      // bottom of the stand
-  tilt = -0.08,     // a tiny tilt back
-  amp = 0.06,       // waving amplitude
-  speedMin = 0.8, speedMax = 1.4,
-} = {}) {
-  // Geometry for a single "fan" (a small upright card)
-  const w = width / cols * 0.8;
-  const h = height / rows * 0.85;
-  const geom = new THREE.PlaneGeometry(w, h);
-
-  // Material supports per-instance colors
-  const mat = new THREE.MeshBasicMaterial({
-    side: THREE.DoubleSide,
-    vertexColors: true,
-    transparent: true,
-    opacity: 0.95,
-  });
-
-  const total = rows * cols;
-  const mesh = new THREE.InstancedMesh(geom, mat, total);
-  mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-
-  // give the wall a slight backward tilt so it feels like stands
-  mesh.rotation.x = tilt;
-
-  // palette: mostly neutral clothing with pops of team colors
-  const palette = [
-    0xdbeafe, 0xbfdbfe, 0x93c5fd, 0x60a5fa, 0x3b82f6, // blues
-    0xfecaca, 0xfca5a5, 0xf87171,                     // reds
-    0xfde68a, 0xf59e0b,                               // yellows
-    0xc7d2fe, 0xa5b4fc,                                // purple hints
-    0xe5e7eb, 0xcbd5e1, 0x94a3b8                      // neutrals
-  ];
-
-  // Precompute per-instance animation phases and speeds
-  const phases = new Float32Array(total);
-  const speeds = new Float32Array(total);
-  const offsets = new Float32Array(total); // slight per-row base offset
-
-  const dummy = new THREE.Object3D();
-  let i = 0;
-  for (let r = 0; r < rows; r++) {
-    for (let c = 0; c < cols; c++, i++) {
-      const x = -width/2 + (c + 0.5) * (width / cols);
-      const y = yBase + (r + 0.5) * (height / rows);
-
-      dummy.position.set(x, y, z);
-      // face roughly toward camera (camera is in +z looking to -z)
-      dummy.rotation.y = 0; // plane faces +z by default; DoubleSide is on anyway
-      dummy.updateMatrix();
-      mesh.setMatrixAt(i, dummy.matrix);
-
-      // Per-instance color
-      const color = new THREE.Color(palette[(Math.random() * palette.length) | 0]);
-      mesh.setColorAt(i, color);
-
-      // Anim params
-      phases[i] = Math.random() * Math.PI * 2;
-      speeds[i] = THREE.MathUtils.lerp(speedMin, speedMax, Math.random());
-      offsets[i] = (r / rows) * 0.25; // makes upper rows sway a tad more
-    }
-  }
-  mesh.instanceColor.needsUpdate = true;
-
-  // updater
-  const state = { t: 0, amp, phases, speeds, offsets, rows, cols, mesh, dummy, z, width, height, yBase };
-  function updateFans(dt) {
-    state.t += dt;
-    const {
-      mesh, dummy, phases, speeds, offsets, rows, cols,
-      z, width, height, yBase
-    } = state;
-
-    let idx = 0;
-    // Subtle wave: sway in X a hair, bob in Y a touch
-    for (let r = 0; r < rows; r++) {
-      const rowAmp = state.amp * (1 + offsets[idx]); // slightly stronger higher up
-      for (let c = 0; c < cols; c++, idx++) {
-        const baseX = -width/2 + (c + 0.5) * (width / cols);
-        const baseY = yBase + (r + 0.5) * (height / rows);
-
-        const phase = phases[idx];
-        const spd   = speeds[idx];
-
-        const swayX = Math.sin(state.t * spd + phase) * (rowAmp * 0.35);
-        const bobY  = Math.cos(state.t * spd * 0.7 + phase) * (rowAmp * 0.6);
-
-        dummy.position.set(baseX + swayX, baseY + bobY, z);
-        dummy.rotation.x = mesh.rotation.x;
-        dummy.rotation.y = 0;
-        dummy.updateMatrix();
-        mesh.setMatrixAt(idx, dummy.matrix);
-      }
-    }
-    mesh.instanceMatrix.needsUpdate = true;
-  }
-
-  return { group: mesh, update: updateFans, state };
-}
 
 /* =======================
    GAME OBJECTS
@@ -364,7 +406,6 @@ let keeper = new Goalkeeper({ scene, gltfLoader });
 let netOffsetZ = 0, netVelZ = 0;
 function pulseNet(){ netVelZ -= 0.6; }
 
-// goal: load and snap posts to ENDLINE_Z
 gltfLoader.load(`${ASSET_BASE}models/goal.glb`, (gltf) => {
   goal = gltf.scene;
   goal.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; }});
@@ -374,7 +415,7 @@ gltfLoader.load(`${ASSET_BASE}models/goal.glb`, (gltf) => {
 
   goal.updateWorldMatrix(true, true);
   const box = new THREE.Box3().setFromObject(goal);
-  const frontZ = box.max.z;            // face toward the pitch/camera
+  const frontZ = box.max.z;
   goal.position.z += (ENDLINE_Z - frontZ);
 });
 
@@ -394,10 +435,10 @@ function updateAim(dir3){
 /* =======================
    HUD + SCORING
 ======================= */
-const scoreEl     = document.getElementById('score');
-const attemptsEl  = document.getElementById('attempts');
+const scoreEl    = document.getElementById('score');
+const attemptsEl = document.getElementById('attempts');
 const hud = {
-  setScore: (v) => { scoreEl.textContent = `Score: ${v}`; },
+  setScore: (v) => { scoreEl.textContent    = `Score: ${v}`; },
   setShot:  (n) => { attemptsEl.textContent = `Attempts: ${n}`; },
 };
 const scoring = new Scoring(hud);
@@ -405,15 +446,16 @@ const scoring = new Scoring(hud);
 /* =======================
    DIFFICULTY SCALING
 ======================= */
-let difficultyLevel = 0; // increments at 15, 30, 45, ...
+let difficultyLevel = 0;
+
+// bump every 10 points
 function maybeScaleDifficulty() {
-  const newLevel = Math.floor(scoring.score / 15);
+  const newLevel = Math.floor(scoring.score / 10);
   if (newLevel > difficultyLevel) {
     difficultyLevel = newLevel;
-    // bump keeper speed by +20% per tier
-    if (keeper?.bumpSpeedScale) keeper.bumpSpeedScale(1.20);
+    if (keeper?.bumpSpeedScale) keeper.bumpSpeedScale(1.2);
     else if (keeper?.setSpeedScale && keeper?.getSpeedScale) {
-      keeper.setSpeedScale(keeper.getSpeedScale() * 1.20);
+      keeper.setSpeedScale(keeper.getSpeedScale() * 1.2);
     }
   }
 }
@@ -421,13 +463,14 @@ function maybeScaleDifficulty() {
 /* =======================
    UI & GAME STATE
 ======================= */
-const hudWrap     = document.getElementById('hud');
-const menu        = document.getElementById('menu');
-const playBtn     = document.getElementById('playBtn');
-const gameOver    = document.getElementById('gameOver');
-const finalScore  = document.getElementById('finalScore');
-const playAgainBtn= document.getElementById('playAgainBtn');
-const quitBtn     = document.getElementById('quitBtn');
+const hudWrap      = document.getElementById('hud');
+const menu         = document.getElementById('menu');
+const playBtn      = document.getElementById('playBtn');
+const gameOver     = document.getElementById('gameOver');
+const finalScore   = document.getElementById('finalScore');
+const playAgainBtn = document.getElementById('playAgainBtn');
+const quitBtn      = document.getElementById('quitBtn');
+const gameOverTitle= document.getElementById('gameOverTitle');
 
 const GameState = { MENU:'MENU', PLAYING:'PLAYING', GAME_OVER:'GAME_OVER' };
 let gameState = GameState.MENU;
@@ -437,48 +480,95 @@ function hideMenu(){ menu?.classList.add('hidden'); }
 function showHUD(){ hudWrap?.classList.remove('hidden'); }
 function hideHUD(){ hudWrap?.classList.add('hidden'); }
 function hideGameOver(){ gameOver?.classList.add('hidden'); }
-function showGameOver(){
+
+function showMatchOver(iWon, reason) {
   gameState = GameState.GAME_OVER;
-  finalScore.textContent = `Final Score: ${scoring.score}`;
-  gameOver.classList.remove('hidden');
+
+  const reasonText =
+    reason === 'points'
+      ? (iWon ? 'You reached 50 points first.' : 'Opponent reached 50 points first.')
+      : (iWon ? 'Opponent missed 3 shots in a row.' : 'You missed 3 shots in a row.');
+
+  gameOver.classList.remove('hidden', 'win', 'lose');
+  gameOver.classList.add(iWon ? 'win' : 'lose');
+
+  if (gameOverTitle) gameOverTitle.textContent = iWon ? 'YOU WIN!' : 'YOU LOSE';
+  if (finalScore)    finalScore.textContent    = reasonText;
+
   hideHUD();
-  audio.play('whistle'); // cue on finish
+  audio.play('whistle');
+
+  if (readyBar) readyBar.classList.remove('hidden');
 }
-function initUIState(){ gameState = GameState.MENU; showMenu(); hideGameOver(); hideHUD(); scoring.reset(); }
+
+function initUIState(){
+  gameState = GameState.MENU;
+  showMenu();
+  hideGameOver();
+  hideHUD();
+  if (readyBar) readyBar.classList.add('hidden');
+  scoring.reset();
+}
+
 function resetWholeScene(){
   ball.position.set(0,ballRadius,0);
   ballVelocity.set(0,0,0);
 
-  // --- reset shot state so you can shoot again ---
   canShoot     = true;
   shotActive   = false;
   shotResolved = false;
   holdActive   = false;
   holdUntil    = 0;
 
-  aimingYaw = 0; aimingPitch = -0.1;
+  aimingYaw = 0;
+  aimingPitch = -0.1;
   updateAim(getAimDirection());
   if (keeper?.mesh) keeper.mesh.position.set(0, 0.95, KEEPER_Z);
 
   showAimArrow(true);
 }
+
 function startNewGame(){
-  hideMenu(); hideGameOver(); resetWholeScene(); scoring.reset(); showHUD();
+  hideMenu();
+  hideGameOver();
+  if (readyBar) readyBar.classList.add('hidden');
+  resetWholeScene();
+  scoring.reset();
+  showHUD();
 
-  // defensive reset (covers any call path)
-  canShoot = true; shotActive = false; shotResolved = false; holdActive = false; holdUntil = 0;
+  canShoot = true;
+  shotActive = false;
+  shotResolved = false;
+  holdActive = false;
+  holdUntil = 0;
 
-  // reset difficulty & keeper speed
   difficultyLevel = 0;
   if (keeper?.setSpeedScale) keeper.setSpeedScale(1);
 
   gameState = GameState.PLAYING;
   showAimArrow(true);
-  audio.play('whistle'); // start-game whistle
+  audio.play('whistle');
 }
+
 playBtn?.addEventListener('click', startNewGame);
-playAgainBtn?.addEventListener('click', startNewGame);
-quitBtn?.addEventListener('click', ()=>{ hideGameOver(); showMenu(); hideHUD(); gameState = GameState.MENU; resetWholeScene(); scoring.reset(); });
+
+playAgainBtn?.addEventListener('click', () => {
+  if (gameState === GameState.GAME_OVER && readyBtn) {
+    readyBtn.click(); // play again -> toggle ready
+  }
+});
+
+quitBtn?.addEventListener('click', () => {
+  hideGameOver();
+  if (readyBar) readyBar.classList.add('hidden');
+  showMenu();
+  hideHUD();
+  gameState = GameState.MENU;
+  resetWholeScene();
+  scoring.reset();
+  socket.disconnect();
+});
+
 initUIState();
 
 /* =======================
@@ -486,30 +576,66 @@ initUIState();
 ======================= */
 let aimingYaw = 0, aimingPitch = -0.1;
 const aimSpeed = 0.03;
+
 function getAimDirection(){
   const dir = new THREE.Vector3(0,0,-1);
-  const q = new THREE.Quaternion().setFromEuler(new THREE.Euler(aimingPitch, aimingYaw, 0, 'YXZ'));
+  const q = new THREE.Quaternion().setFromEuler(
+    new THREE.Euler(aimingPitch, aimingYaw, 0, 'YXZ')
+  );
   return dir.applyQuaternion(q).normalize();
 }
-function handleAimKey(k){
+
+// arrows ONLY for cursor/aim
+function handleAimKey(code){
   if (gameState !== GameState.PLAYING) return;
-  if (k==='ArrowLeft'||k.toLowerCase()==='a') aimingYaw += aimSpeed;
-  if (k==='ArrowRight'||k.toLowerCase()==='d') aimingYaw -= aimSpeed;
-  if (k==='ArrowUp'||k.toLowerCase()==='w') aimingPitch += aimSpeed;
-  if (k==='ArrowDown'||k.toLowerCase()==='s') aimingPitch -= aimSpeed;
+  if (code === 'ArrowLeft')  aimingYaw += aimSpeed;
+  if (code === 'ArrowRight') aimingYaw -= aimSpeed;
+  if (code === 'ArrowUp')    aimingPitch += aimSpeed;
+  if (code === 'ArrowDown')  aimingPitch -= aimSpeed;
   aimingPitch = THREE.MathUtils.clamp(aimingPitch, -0.6, 0.4);
   updateAim(getAimDirection());
 }
+
 window.addEventListener('keydown', (e) => {
-  const key = e.key.toLowerCase();
-  if (key === ' ' || e.code === 'Space') {
+  if (e.repeat) return;
+  const code = e.code;
+  const key  = e.key;
+
+  if (code === 'Space') {
     if (gameState !== GameState.PLAYING || !canShoot) return;
     shoot();
-  } else if (key === 'r') {
-    if (gameState === GameState.PLAYING) startNewGame();
-  } else {
-    handleAimKey(e.key);
+    return;
   }
+
+  if (code === 'KeyR') {
+    if (gameState === GameState.PLAYING) startNewGame();
+    return;
+  }
+
+  // arrows = aim
+  if (code === 'ArrowLeft' || code === 'ArrowRight' ||
+      code === 'ArrowUp'   || code === 'ArrowDown') {
+    handleAimKey(code);
+    return;
+  }
+
+  // A/D = move vision-blocker (support code + key for safety)
+  if (code === 'KeyA' || key === 'a' || key === 'A') {
+    input.left = true;
+    return;
+  }
+  if (code === 'KeyD' || key === 'd' || key === 'D') {
+    input.right = true;
+    return;
+  }
+});
+
+window.addEventListener('keyup', (e) => {
+  const code = e.code;
+  const key  = e.key;
+
+  if (code === 'KeyA' || key === 'a' || key === 'A') input.left  = false;
+  if (code === 'KeyD' || key === 'd' || key === 'D') input.right = false;
 });
 
 /* =======================
@@ -531,40 +657,59 @@ function shoot(){
   canShoot = false;
   shotActive = true;
   shotResolved = false;
-  audio.duck(0.15, 300); // subtle dip on shot
+  audio.duck(0.15, 300);
 }
 
 function resolveShot(result){
   if (shotResolved) return;
   shotResolved = true;
 
-  if (result === 'goal') { audio.play('goal'); audio.duck(0.12, 1200); }
-  else { audio.play('miss'); audio.duck(0.08, 800); } // 'save' and 'miss' share SFX
+  if (result === 'goal') {
+    audio.play('goal');
+    audio.duck(0.12, 1200);
+  } else {
+    audio.play('miss');
+    audio.duck(0.08, 800);
+  }
 
-  const { isGameOver } = scoring.onShot(result);
-
-  // bump difficulty when crossing 15, 30, 45, ...
+  scoring.onShot(result);
   maybeScaleDifficulty();
 
+  socket.emit('shotResult', { result });
+
   scheduleHold();
-  if (isGameOver) showGameOver();
 }
 
-function scheduleHold(){ holdActive = true; holdUntil = performance.now() + 667; }
+function scheduleHold(){
+  holdActive = true;
+  holdUntil = performance.now() + 667;
+}
+
 function finalizeHold(){
   holdActive = false;
   shotActive = false;
   if (gameState !== GameState.GAME_OVER) {
-    setTimeout(()=>{ if (gameState===GameState.PLAYING){ canShoot = true; showAimArrow(true); resetBallForNext(); } }, 300);
+    setTimeout(() => {
+      if (gameState === GameState.PLAYING) {
+        canShoot = true;
+        showAimArrow(true);
+        resetBallForNext();
+      }
+    }, 300);
   }
 }
-function resetBallForNext(){ ball.position.set(0,ballRadius,0); ballVelocity.set(0,0,0); }
+
+function resetBallForNext(){
+  ball.position.set(0,ballRadius,0);
+  ballVelocity.set(0,0,0);
+}
 
 /* =======================
    LOOP / COLLISIONS
 ======================= */
 const dt = 1/60;
 const tmpBox = new THREE.Box3();
+const tmpVec = new THREE.Vector3();
 
 function reflectVelocity(v, normal, restitution = 0.6){
   const vn = normal.clone().multiplyScalar(v.dot(normal));
@@ -582,28 +727,86 @@ function step(){
     goal.position.z = ENDLINE_Z + netOffsetZ;
   }
 
-  // Keeper idle sway
   if (keeper) keeper.update(dt);
+
+  // local player movement + sync (clamped to posts)
+  if (localPlayer) {
+    const moved = localPlayer.updateFromInput(input, dt);
+    if (moved) {
+      const { x, z } = localPlayer.getPosition();
+      socket.emit('playerMove', { x, z });
+    }
+  }
 
   if (gameState === GameState.PLAYING) {
     if (!holdActive) {
-      // integrate ball
       ball.position.addScaledVector(ballVelocity, dt);
       ballVelocity.multiplyScalar(0.99);
       if (ball.position.y < ballRadius) ball.position.y = ballRadius;
 
-      // Keeper collision (sphere vs AABB) — bounce & mark save once
+      // --- Keeper collision (sphere vs AABB) ---
       const kBox = keeper?.getAABB?.(tmpBox);
       if (shotActive && !shotResolved && kBox) {
-        const closest = kBox.clampPoint(ball.position, new THREE.Vector3());
+        const closest = kBox.clampPoint(ball.position, tmpVec.set(0,0,0));
         const d2 = closest.distanceToSquared(ball.position);
         const r2 = ballRadius * ballRadius;
 
         if (d2 <= r2) {
           const normal = ball.position.clone().sub(closest).normalize();
-          ball.position.add(normal.clone().multiplyScalar((ballRadius - Math.sqrt(d2)) + 0.002));
+          ball.position.add(
+            normal.clone().multiplyScalar((ballRadius - Math.sqrt(d2)) + 0.002)
+          );
           ballVelocity.copy(reflectVelocity(ballVelocity, normal, 0.6));
           resolveShot('save');
+        }
+      }
+
+      // --- Player blocker collisions (OPPONENT ONLY) ---
+      if (shotActive && !shotResolved) {
+        const blockers = [];
+
+        // Only consider remote players whose color differs from the local player's color.
+        // If you're red, only blue blocks. If you're blue, only red blocks.
+        remotePlayers.forEach((p) => {
+          if (p.teamColor && p.teamColor !== playerColor) {
+            blockers.push(p);
+          }
+        });
+
+        // Simple sphere-vs-sphere style collision:
+        // - ball is at ball.position with radius ballRadius
+        // - blocker is approximated as a sphere of radius BLOCKER_RADIUS
+        const BLOCKER_RADIUS = 0.4; // tweak if they feel too big/small
+
+        for (const blocker of blockers) {
+          // Use the blocker’s current X/Z position
+          const { x, z } = blocker.getPosition
+            ? blocker.getPosition()
+            : { x: blocker.mesh?.position.x || 0, z: blocker.mesh?.position.z || 0 };
+
+          // Approximate the blocker centre at same Y as ball for simplicity
+          tmpVec.set(x, ball.position.y, z);
+
+          const d2 = tmpVec.distanceToSquared(ball.position);
+          const combinedR = ballRadius + BLOCKER_RADIUS;
+          const combinedR2 = combinedR * combinedR;
+
+          if (d2 <= combinedR2) {
+            const dist = Math.sqrt(d2) || 0.0001;
+            const normal = ball.position.clone().sub(tmpVec).divideScalar(dist);
+
+            // Push ball out of the blocker
+            const penetration = combinedR - dist;
+            ball.position.add(
+              normal.clone().multiplyScalar(penetration + 0.002)
+            );
+
+            // Reflect ball velocity (slightly less bouncy than keeper)
+            ballVelocity.copy(reflectVelocity(ballVelocity, normal, 0.55));
+
+            resolveShot('save');
+            break; // one blocker is enough
+          }
         }
       }
 
@@ -626,12 +829,11 @@ function step(){
         }
       }
 
-      // fail-safe
       if (shotActive && !shotResolved && ball.position.z < ENDLINE_Z - 6) {
         ballVelocity.set(0,0,0);
         resolveShot('miss');
       }
-    } else if (performance.now() >= holdUntil) {
+    } else if (now >= holdUntil) {
       finalizeHold();
     }
   }
@@ -647,3 +849,66 @@ window.addEventListener('resize', () => {
   camera.updateProjectionMatrix();
   drawMarkings();
 });
+
+/* =======================
+   PLAYER CREATION & SCOREBOARD
+======================= */
+function createLocalPlayer(p) {
+  if (localPlayer) return;
+
+  const spawnZ = KEEPER_Z; // same line as keeper
+  const spawnX = p.color === 'red' ? 2.5 : -2.5;
+
+  localPlayer = new PlayerAvatar({
+    scene,
+    isLocal: true,
+    name: p.name,
+    teamColor: p.color,
+    spawnZ,
+    bounds: { minX: BLOCKER_MIN_X, maxX: BLOCKER_MAX_X },
+  });
+  localPlayer.setPosition(spawnX, spawnZ);
+}
+
+function createRemotePlayer(p) {
+  if (remotePlayers.has(p.id)) return;
+
+  const spawnZ = KEEPER_Z;
+  const spawnX = p.color === 'red' ? 2.5 : -2.5;
+
+  const avatar = new PlayerAvatar({
+    scene,
+    isLocal: false,
+    name: p.name,
+    teamColor: p.color,
+    spawnZ,
+    bounds: { minX: BLOCKER_MIN_X, maxX: BLOCKER_MAX_X },
+  });
+  avatar.setPosition(spawnX, spawnZ);
+  remotePlayers.set(p.id, avatar);
+}
+
+function updateScoreboardForPlayers(players) {
+  if (!myId) return;
+  const me  = players[myId];
+  const opp = Object.values(players).find((p) => p.id !== myId);
+
+  if (me) {
+    if (meNameEl)   meNameEl.textContent   = me.name;
+    if (meColorEl)  meColorEl.textContent  = `Color: ${me.color}`;
+    if (meWinsEl)   meWinsEl.textContent   = `Wins: ${me.wins ?? 0}`;
+    if (mePointsEl) mePointsEl.textContent = `Points: ${me.points ?? 0}`;
+  }
+
+  if (opp) {
+    if (oppNameEl)   oppNameEl.textContent   = opp.name;
+    if (oppColorEl)  oppColorEl.textContent  = `Color: ${opp.color}`;
+    if (oppWinsEl)   oppWinsEl.textContent   = `Wins: ${opp.wins ?? 0}`;
+    if (oppPointsEl) oppPointsEl.textContent = `Points: ${opp.points ?? 0}`;
+  } else {
+    if (oppNameEl)   oppNameEl.textContent   = 'Waiting...';
+    if (oppColorEl)  oppColorEl.textContent  = '';
+    if (oppWinsEl)   oppWinsEl.textContent   = '';
+    if (oppPointsEl) oppPointsEl.textContent = '';
+  }
+}

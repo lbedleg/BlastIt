@@ -1,18 +1,36 @@
 {
-    "name": "blastit",
-    "private": true,
-    "version": "0.0.1",
-    "type": "module",
-    "scripts": {
-        "dev": "vite",
-        "server": "vite", 
-        "build": "vite build",
-        "preview": "vite preview"
-    },
-    "devDependencies": {
-        "vite": "^5.0.0"
-    },
-    "dependencies": {
-        "three": "^0.180.0"
-    }
+  "name": "blastit",
+  "private": true,
+  "version": "0.0.1",
+  "type": "module",
+  "scripts": {
+  "dev": "vite",
+  "build": "vite build",
+  "preview": "vite preview",
+  "start-server": "node server.js"
+},
+  "devDependencies": {
+    "vite": "^5.0.0"
+  },
+  "dependencies": {
+    "express": "^5.2.1",
+    "socket.io": "^4.8.1",
+    "three": "^0.180.0"
+  },
+  "description": "**BlastIt!** is a lightweight 3D penalty shootout built with **Three.js**.   Score as many goals as you can while the **goalkeeper gets faster every 15 points**.",
+  "main": "vite.config.js",
+  "directories": {
+    "doc": "docs"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/lbedleg/BlastIt.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/lbedleg/BlastIt/issues"
+  },
+  "homepage": "https://github.com/lbedleg/BlastIt#readme"
 }

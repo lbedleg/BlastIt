@@ -9,8 +9,7 @@ export class Goalkeeper{
     this.timer = 0;
     this.mesh = null;
 
-    // --- difficulty scaling ---
-    this._speedScale = 1;   // 1 = normal speed
+    this._speedScale = 1;
 
     gltfLoader.load(ASSETS.models.keeper, (g)=>{
       this.mesh = g.scene;
@@ -22,28 +21,23 @@ export class Goalkeeper{
     this._box = new THREE.Box3();
   }
 
-  // ===== Difficulty scaling helpers =====
   setSpeedScale(s) {
     this._speedScale = Math.max(0.25, s || 1);
   }
-  bumpSpeedScale(f = 1.12) { // +12% per difficulty tier by default
+  bumpSpeedScale(f = 1.12) {
     this.setSpeedScale((this._speedScale || 1) * f);
   }
   getSpeedScale() {
     return this._speedScale || 1;
   }
 
-  // Simple idle sway
   update(dt){
-    // Apply scaling to time progression (increases sway frequency)
     this.timer += dt * this.getSpeedScale();
     if (this.mesh){
-      // frequency scales with timer; amplitude stays the same
       this.mesh.position.x = Math.sin(this.timer * 1.2) * 0.8;
     }
   }
 
-  // Up-to-date world-space AABB for collisions
   getAABB(outBox){
     if (!this.mesh) return null;
     const b = outBox ?? this._box;

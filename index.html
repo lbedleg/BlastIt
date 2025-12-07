@@ -28,12 +28,42 @@
     <div id="hud" class="hud hidden">
       <div class="pill" id="score">Score: 0</div>
       <div class="pill" id="attempts">Attempts: 0/3</div>
+
       <div id="controls" class="controls">
-        <span><kbd>WASD</kbd>/<kbd>Arrows</kbd> aim</span>
+        <span><kbd>Arrows</kbd> aim</span>
+        <span class="dot">•</span>
+        <span><kbd>A</kbd>/<kbd>D</kbd> move blocker</span>
         <span class="dot">•</span>
         <span><kbd>Space</kbd> shoot</span>
         <span class="dot">•</span>
         <span><kbd>R</kbd> reset</span>
+      </div>
+
+      <!-- 1v1 SCOREBOARD -->
+      <div id="scoreboard" class="scoreboard">
+        <div class="player-card me">
+          <div class="player-name" id="meName"></div>
+          <div class="player-meta">
+            <span id="meColor"></span>
+            <span id="meWins"></span>
+          </div>
+          <div class="player-points" id="mePoints"></div>
+        </div>
+
+        <div class="player-card opp">
+          <div class="player-name" id="oppName"></div>
+          <div class="player-meta">
+            <span id="oppColor"></span>
+            <span id="oppWins"></span>
+          </div>
+          <div class="player-points" id="oppPoints"></div>
+        </div>
+      </div>
+
+      <!-- READY BAR (only shown after match over) -->
+      <div id="readyBar" class="ready-bar hidden">
+        <button id="readyBtn" class="btn small">Ready</button>
+        <span id="readyStatus">Ready: 0/2</span>
       </div>
     </div>
 
@@ -52,8 +82,8 @@
     <!-- Game Over (HIDDEN ON LOAD) -->
     <div id="gameOver" class="overlay hidden">
       <div class="panel">
-        <div class="title">Game Over</div>
-        <div id="finalScore" class="subtitle">Final Score: 0</div>
+        <div id="gameOverTitle" class="title">Game Over</div>
+        <div id="finalScore" class="subtitle"></div>
         <div class="row">
           <button id="playAgainBtn" class="btn primary">Play Again</button>
           <button id="quitBtn" class="btn">Quit</button>
@@ -87,7 +117,8 @@
     <!-- Miss-3-in-a-row Animation -->
     <div id="miss3" class="miss3 hidden"><div class="burst">x3 MISS</div></div>
 
-    <!-- Main module -->
+    <!-- Main modules -->
+    <script src="/socket.io/socket.io.js"></script>
     <script type="module" src="/src/main.js"></script>
   </body>
 </html>
